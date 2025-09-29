@@ -1,5 +1,5 @@
-# AutoCert 一键安装脚本 - Windows 版本
-# 支持 Windows 10/11 和 Windows Server
+# AutoCert Installation Script - Windows
+# Supports Windows 10/11 and Windows Server
 
 param(
     [string]$Version = "latest",
@@ -9,10 +9,30 @@ param(
     [switch]$Debug
 )
 
-# 设置错误处理
+# Set encoding to support proper text output
+try {
+    # Set console encoding
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    [Console]::InputEncoding = [System.Text.Encoding]::UTF8
+    
+    # Set PowerShell output encoding
+    $OutputEncoding = [System.Text.Encoding]::UTF8
+    
+    # Additional settings for Windows PowerShell 5.1
+    if ($PSVersionTable.PSVersion.Major -le 5) {
+        $PSDefaultParameterValues['*:Encoding'] = 'utf8'
+    }
+    
+    # Set current process code page to UTF-8
+    cmd /c "chcp 65001 > nul 2>&1"
+} catch {
+    Write-Warning "Encoding setup may not be fully effective, but will not affect installation"
+}
+
+# Set error handling
 $ErrorActionPreference = "Stop"
 
-# 日志函数
+# Log functions
 function Write-Log {
     param(
         [string]$Message,
@@ -40,165 +60,193 @@ function Write-Warn { param([string]$Message) Write-Log $Message "WARN" }
 function Write-Error { param([string]$Message) Write-Log $Message "ERROR" }
 function Write-Debug { param([string]$Message) Write-Log $Message "DEBUG" }
 
-# 错误处理函数
+# Error handling function
 function Stop-OnError {
     param([string]$Message)
     Write-Error $Message
     exit 1
 }
 
-# 检查管理员权限
+# Check administrator rights
 function Test-AdminRights {
-    Write-Info "检查管理员权限..."
+    Write-Info "Checking administrator rights..."
     
     $currentUser = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = New-Object Security.Principal.WindowsPrincipal($currentUser)
     $isAdmin = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
     
     if (-not $isAdmin) {
-        Stop-OnError "此脚本需要管理员权限运行。请右键点击 PowerShell 并选择 '以管理员身份运行'。"
+        Stop-OnError "This script requires administrator privileges. Please right-click PowerShell and select 'Run as administrator'."
     }
     
-    Write-Info "管理员权限检查通过"
+    Write-Info "Administrator rights check passed"
 }
 
-# 检测系统信息
+# Detect system information
 function Get-SystemInfo {
-    Write-Info "检测系统信息..."
+    Write-Info "Detecting system information..."
     
     $os = Get-WmiObject -Class Win32_OperatingSystem
     $arch = $env:PROCESSOR_ARCHITECTURE
     
-    Write-Info "操作系统: $($os.Caption)"
-    Write-Info "架构: $arch"
+    Write-Info "Operating System: $($os.Caption)"
+    Write-Info "Architecture: $arch"
     
-    # 转换架构名称
+    # Convert architecture names
     $script:Architecture = switch ($arch) {
         "AMD64" { "amd64" }
         "ARM64" { "arm64" }
-        default { Stop-OnError "不支持的系统架构: $arch" }
+        default { Stop-OnError "Unsupported system architecture: $arch" }
     }
     
-    Write-Debug "转换后的架构: $script:Architecture"
+    Write-Debug "Converted architecture: $script:Architecture"
 }
 
-# 检查并安装依赖
+# Check and install dependencies
 function Install-Dependencies {
-    Write-Info "检查系统依赖..."
+    Write-Info "Checking system dependencies..."
     
-    # 检查 PowerShell 版本
+    # Check PowerShell version
     if ($PSVersionTable.PSVersion.Major -lt 3) {
-        Stop-OnError "需要 PowerShell 3.0 或更高版本"
+        Stop-OnError "PowerShell 3.0 or higher is required"
     }
     
-    # 检查 .NET Framework
+    # Check .NET Framework
     $dotNetVersion = Get-ItemProperty "HKLM:SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full\" -Name Release -ErrorAction SilentlyContinue
     if (-not $dotNetVersion -or $dotNetVersion.Release -lt 461808) {
-        Write-Warn ".NET Framework 4.7.2 或更高版本未安装，建议升级"
+        Write-Warn ".NET Framework 4.7.2 or higher is not installed, upgrade recommended"
     }
     
-    Write-Info "依赖检查完成"
+    Write-Info "Dependency check completed"
 }
 
-# 下载 AutoCert 二进制文件
+# Download AutoCert binary files
 function Get-AutoCertBinary {
-    Write-Info "下载 AutoCert 二进制文件..."
+    Write-Info "Downloading AutoCert binary files..."
     
-    $repoUrl = "https://api.github.com/repos/renky1025/autocert"  # 替换为实际仓库
+    $repoUrl = "https://api.github.com/repos/renky1025/autocert"
     $tempDir = "$env:TEMP\AutoCert"
     $tempFile = "$tempDir\autocert.zip"
     
-    # 创建临时目录
+    # Create temporary directory
     if (Test-Path $tempDir) {
         Remove-Item $tempDir -Recurse -Force
     }
     New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
     
     try {
-        # 获取最新版本信息
+        # Get latest version information
         if ($Version -eq "latest") {
-            Write-Info "获取最新版本信息..."
-            $releaseInfo = Invoke-WebRequest -Uri "$repoUrl/releases/latest" -UseBasicParsing | ConvertFrom-Json
-            $Version = $releaseInfo.tag_name
-            Write-Info "最新版本: $Version"
+            Write-Info "Getting latest version information..."
+            try {
+                # Use TLS 1.2 and above protocols
+                [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12, [Net.SecurityProtocolType]::Tls13
+                
+                # Set request parameters
+                $headers = @{
+                    "User-Agent" = "AutoCert-Installer/1.0"
+                    "Accept" = "application/vnd.github.v3+json"
+                }
+                
+                # Get latest version
+                $releaseInfo = Invoke-RestMethod -Uri "$repoUrl/releases/latest" -Method Get -Headers $headers -TimeoutSec 30
+                
+                if ($releaseInfo -and $releaseInfo.tag_name) {
+                    $Version = $releaseInfo.tag_name
+                    Write-Info "Retrieved latest version: $Version"
+                } else {
+                    throw "Invalid version information response"
+                }
+            } catch {
+                Write-Warn "Unable to get latest version information ($($_.Exception.Message)), will use default version"
+                $Version = "v1.0.0-final"  # Default version
+            }
         }
         
-        # 构建下载 URL
+        # Build download URL
         $downloadUrl = "https://github.com/renky1025/autocert/releases/download/$Version/autocert_${Version}_windows_$($script:Architecture).zip"
-        Write-Debug "下载 URL: $downloadUrl"
+        Write-Debug "Download URL: $downloadUrl"
         
-        # 下载文件
-        Write-Info "正在下载: $downloadUrl"
-        Invoke-WebRequest -Uri $downloadUrl -OutFile $tempFile -UseBasicParsing
+        # Download file
+        Write-Info "Downloading: $downloadUrl"
+        try {
+            # Set progress bar display
+            $ProgressPreference = 'SilentlyContinue'
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            Invoke-WebRequest -Uri $downloadUrl -OutFile $tempFile -UseBasicParsing -TimeoutSec 300
+            $ProgressPreference = 'Continue'
+        } catch {
+            throw "Download failed: $($_.Exception.Message)"
+        }
         
-        # 解压文件
-        Write-Info "解压文件..."
+        # Extract files
+        Write-Info "Extracting files..."
         Expand-Archive -Path $tempFile -DestinationPath $tempDir -Force
         
-        # 检查二进制文件是否存在
+        # Check if binary file exists
         $binaryPath = "$tempDir\autocert.exe"
         if (-not (Test-Path $binaryPath)) {
-            Stop-OnError "解压后未找到 autocert.exe"
+            Stop-OnError "autocert.exe not found after extraction"
         }
         
-        # 创建安装目录
+        # Create installation directory
         if (-not (Test-Path $InstallDir)) {
             New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
         }
         
-        # 复制二进制文件
+        # Copy binary file
         $targetPath = "$InstallDir\autocert.exe"
         Copy-Item $binaryPath $targetPath -Force
         
-        Write-Info "二进制文件安装完成: $targetPath"
+        Write-Info "Binary file installation completed: $targetPath"
         
     } catch {
-        Stop-OnError "下载失败: $($_.Exception.Message)"
+        Stop-OnError "Download failed: $($_.Exception.Message)"
     } finally {
-        # 清理临时文件
+        # Clean up temporary files
         if (Test-Path $tempDir) {
             Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
 }
 
-# 创建配置目录和文件
+# Create configuration directories and files
 function New-Configuration {
-    Write-Info "创建配置目录和文件..."
+    Write-Info "Creating configuration directories and files..."
     
-    # 创建配置目录
+    # Create configuration directories
     $certDir = "$ConfigDir\certs"
     $logDir = "$ConfigDir\logs"
     
     @($ConfigDir, $certDir, $logDir) | ForEach-Object {
         if (-not (Test-Path $_)) {
             New-Item -ItemType Directory -Path $_ -Force | Out-Null
-            Write-Debug "创建目录: $_"
+            Write-Debug "Created directory: $_"
         }
     }
     
-    # 创建默认配置文件
+    # Create default configuration file
     $configFile = "$ConfigDir\config.yaml"
     if (-not (Test-Path $configFile) -or $Force) {
         $configContent = @"
-# AutoCert 配置文件
+# AutoCert Configuration File
 log_level: info
 config_dir: $ConfigDir
 cert_dir: $certDir
 log_dir: $logDir
 
-# ACME 配置
+# ACME Configuration
 acme:
   server: https://acme-v02.api.letsencrypt.org/directory
   key_type: rsa
   key_size: 2048
 
-# Web 服务器配置
+# Web Server Configuration
 webserver:
   type: iis  # iis, nginx
   reload_cmd: iisreset
 
-# 通知配置
+# Notification Configuration
 notification:
   email:
     smtp: ""
@@ -210,24 +258,24 @@ notification:
 "@
         
         Set-Content -Path $configFile -Value $configContent -Encoding UTF8
-        Write-Info "默认配置文件创建完成: $configFile"
+        Write-Info "Default configuration file created: $configFile"
     } else {
-        Write-Info "配置文件已存在，跳过创建"
+        Write-Info "Configuration file already exists, skipping creation"
     }
 }
 
-# 检测 Web 服务器
+# Detect Web Server
 function Test-WebServer {
-    Write-Info "检测 Web 服务器..."
+    Write-Info "Detecting web server..."
     
-    # 检测 IIS
+    # Detect IIS
     $iisFeature = Get-WindowsFeature -Name IIS-WebServer -ErrorAction SilentlyContinue
     if ($iisFeature -and $iisFeature.InstallState -eq "Installed") {
-        Write-Info "检测到 IIS"
+        Write-Info "Detected IIS"
         return
     }
     
-    # 检测 Nginx for Windows
+    # Detect Nginx for Windows
     $nginxPaths = @(
         "C:\nginx\nginx.exe",
         "C:\Program Files\nginx\nginx.exe",
@@ -236,47 +284,59 @@ function Test-WebServer {
     
     foreach ($path in $nginxPaths) {
         if (Test-Path $path) {
-            Write-Info "检测到 Nginx: $path"
+            Write-Info "Detected Nginx: $path"
             
-            # 更新配置文件
+            # Update configuration file
             $configFile = "$ConfigDir\config.yaml"
             if (Test-Path $configFile) {
                 $content = Get-Content $configFile -Raw
                 $content = $content -replace "type: iis", "type: nginx"
                 Set-Content -Path $configFile -Value $content -Encoding UTF8
-                Write-Info "配置文件已更新 Web 服务器类型: nginx"
+                Write-Info "Configuration file updated with web server type: nginx"
             }
             return
         }
     }
     
-    Write-Warn "未检测到支持的 Web 服务器 (IIS/Nginx)"
+    Write-Warn "No supported web server detected (IIS/Nginx)"
 }
 
-# 添加到 PATH 环境变量
+# Add to PATH environment variable
 function Add-ToPath {
-    Write-Info "添加到 PATH 环境变量..."
+    Write-Info "Adding to PATH environment variable..."
     
     $currentPath = [Environment]::GetEnvironmentVariable("PATH", "Machine")
     
     if ($currentPath -notlike "*$InstallDir*") {
         $newPath = "$currentPath;$InstallDir"
         [Environment]::SetEnvironmentVariable("PATH", $newPath, "Machine")
-        Write-Info "已添加到系统 PATH: $InstallDir"
+        Write-Info "Added to system PATH: $InstallDir"
         
-        # 更新当前会话的 PATH
+        # Update current session PATH immediately
         $env:PATH += ";$InstallDir"
+        
+        # Also update current user PATH as backup
+        $userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
+        if ($userPath -notlike "*$InstallDir*") {
+            $newUserPath = if ($userPath) { "$userPath;$InstallDir" } else { $InstallDir }
+            [Environment]::SetEnvironmentVariable("PATH", $newUserPath, "User")
+            Write-Debug "Also added to user PATH as backup"
+        }
     } else {
-        Write-Info "PATH 中已包含安装目录"
+        Write-Info "Installation directory already in PATH"
+        # Ensure current session has the path
+        if ($env:PATH -notlike "*$InstallDir*") {
+            $env:PATH += ";$InstallDir"
+        }
     }
 }
 
-# 创建防火墙规则
+# Create firewall rules
 function New-FirewallRules {
-    Write-Info "创建防火墙规则..."
+    Write-Info "Creating firewall rules..."
     
     try {
-        # 允许 HTTP (80) 和 HTTPS (443) 端口
+        # Allow HTTP (80) and HTTPS (443) ports
         $rules = @(
             @{Name="AutoCert-HTTP"; Port=80; Protocol="TCP"},
             @{Name="AutoCert-HTTPS"; Port=443; Protocol="TCP"}
@@ -286,113 +346,153 @@ function New-FirewallRules {
             $existingRule = Get-NetFirewallRule -DisplayName $rule.Name -ErrorAction SilentlyContinue
             if (-not $existingRule) {
                 New-NetFirewallRule -DisplayName $rule.Name -Direction Inbound -Protocol $rule.Protocol -LocalPort $rule.Port -Action Allow | Out-Null
-                Write-Debug "创建防火墙规则: $($rule.Name)"
+                Write-Debug "Created firewall rule: $($rule.Name)"
             }
         }
         
-        Write-Info "防火墙规则配置完成"
+        Write-Info "Firewall rules configuration completed"
     } catch {
-        Write-Warn "防火墙规则创建失败: $($_.Exception.Message)"
+        Write-Warn "Firewall rule creation failed: $($_.Exception.Message)"
     }
 }
 
-# 验证安装
+# Verify installation
 function Test-Installation {
-    Write-Info "验证安装..."
+    Write-Info "Verifying installation..."
     
     $binaryPath = "$InstallDir\autocert.exe"
     
     if (-not (Test-Path $binaryPath)) {
-        Stop-OnError "安装验证失败: 二进制文件不存在"
+        Stop-OnError "Installation verification failed: binary file does not exist"
     }
     
     try {
+        # Test using full path
         $output = & $binaryPath --version 2>&1
-        Write-Debug "命令输出: $output"
-        Write-Info "安装验证成功"
+        Write-Debug "Command output (full path): $output"
+        
+        # Test using command name from PATH
+        try {
+            $pathOutput = & autocert --version 2>&1
+            Write-Debug "Command output (from PATH): $pathOutput"
+            Write-Info "Installation verification successful - command available in PATH"
+        } catch {
+            Write-Warn "Command not immediately available in PATH, but binary exists. May require new session."
+        }
+        
+        Write-Info "Installation verification successful"
     } catch {
-        Stop-OnError "安装验证失败: 命令执行失败"
+        Stop-OnError "Installation verification failed: command execution failed - $($_.Exception.Message)"
     }
 }
 
-# 显示安装后信息
+# Display post-installation information
 function Show-PostInstallInfo {
     Write-Host ""
-    Write-Host "🎉 AutoCert 安装成功！" -ForegroundColor Green
+    Write-Host "🎉 AutoCert Installation Successful!" -ForegroundColor Green
     Write-Host ""
-    Write-Host "安装信息:" -ForegroundColor Cyan
-    Write-Host "  - 二进制文件: $InstallDir\autocert.exe"
-    Write-Host "  - 配置目录: $ConfigDir"
-    Write-Host "  - 配置文件: $ConfigDir\config.yaml"
-    Write-Host "  - 证书目录: $ConfigDir\certs"
-    Write-Host "  - 日志目录: $ConfigDir\logs"
+    Write-Host "Installation Information:" -ForegroundColor Cyan
+    Write-Host "  - Binary file: $InstallDir\autocert.exe"
+    Write-Host "  - Configuration directory: $ConfigDir"
+    Write-Host "  - Configuration file: $ConfigDir\config.yaml"
+    Write-Host "  - Certificate directory: $ConfigDir\certs"
+    Write-Host "  - Log directory: $ConfigDir\logs"
     Write-Host ""
-    Write-Host "快速开始:" -ForegroundColor Cyan
-    Write-Host "  1. 打开新的 PowerShell 窗口（以刷新 PATH）"
-    Write-Host "  2. 配置邮箱和域名:"
-    Write-Host "     autocert install --domain your-domain.com --email your-email@example.com --iis"
+    
+    # Test if command is available immediately
+    try {
+        $testOutput = & autocert --version 2>&1
+        Write-Host "✅ AutoCert command is ready to use!" -ForegroundColor Green
+        Write-Host ""
+        Write-Host "Quick Start (available now):" -ForegroundColor Cyan
+        Write-Host "  1. Configure email and domain:"
+        Write-Host "     autocert install --domain your-domain.com --email your-email@example.com --iis"
+        Write-Host ""
+        Write-Host "  2. Setup automatic renewal:"
+        Write-Host "     autocert schedule install"
+        Write-Host ""
+        Write-Host "  3. Check certificate status:"
+        Write-Host "     autocert status"
+        Write-Host ""
+        Write-Host "  4. View help:"
+        Write-Host "     autocert --help"
+    } catch {
+        Write-Host "⚠️  AutoCert command not immediately available" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "If 'autocert' command is not found, try:" -ForegroundColor Cyan
+        Write-Host "  Option 1: Close and reopen PowerShell/Command Prompt"
+        Write-Host "  Option 2: Use full path: $InstallDir\autocert.exe"
+        Write-Host "  Option 3: Refresh environment in current session:"
+        Write-Host "           `$env:PATH += ';$InstallDir'"
+        Write-Host ""
+        Write-Host "Quick Start (after fixing PATH):" -ForegroundColor Cyan
+        Write-Host "  1. Configure email and domain:"
+        Write-Host "     autocert install --domain your-domain.com --email your-email@example.com --iis"
+        Write-Host "     OR: $InstallDir\autocert.exe install --domain your-domain.com --email your-email@example.com --iis"
+        Write-Host ""
+        Write-Host "  2. Setup automatic renewal:"
+        Write-Host "     autocert schedule install"
+        Write-Host ""
+        Write-Host "  3. Check certificate status:"
+        Write-Host "     autocert status"
+        Write-Host ""
+        Write-Host "  4. View help:"
+        Write-Host "     autocert --help"
+    }
+    
     Write-Host ""
-    Write-Host "  3. 设置自动续期:"
-    Write-Host "     autocert schedule install"
+    Write-Host "Important Notes:" -ForegroundColor Yellow
+    Write-Host "  - If command not found, close and reopen your terminal"
+    Write-Host "  - Ensure firewall allows inbound connections on ports 80 and 443"
+    Write-Host "  - Configuration file location: $ConfigDir\config.yaml"
     Write-Host ""
-    Write-Host "  4. 查看证书状态:"
-    Write-Host "     autocert status"
-    Write-Host ""
-    Write-Host "  5. 查看帮助:"
-    Write-Host "     autocert --help"
-    Write-Host ""
-    Write-Host "注意事项:" -ForegroundColor Yellow
-    Write-Host "  - 请重新打开 PowerShell 窗口以刷新 PATH 环境变量"
-    Write-Host "  - 确保防火墙允许 80 和 443 端口的入站连接"
-    Write-Host "  - 配置文件位于: $ConfigDir\config.yaml"
-    Write-Host ""
-    Write-Host "更多信息请访问: https://github.com/autocert/autocert" -ForegroundColor Blue
+    Write-Host "For more information visit: https://github.com/renky1025/autocert" -ForegroundColor Blue
 }
 
-# 主函数
+# Main function
 function main {
-    Write-Info "开始安装 AutoCert..."
+    Write-Info "Starting AutoCert installation..."
     
     try {
-        # 检查权限
+        # Check permissions
         Test-AdminRights
         
-        # 检测系统
+        # Detect system
         Get-SystemInfo
         
-        # 安装依赖
+        # Install dependencies
         Install-Dependencies
         
-        # 下载并安装
+        # Download and install
         Get-AutoCertBinary
         
-        # 创建配置
+        # Create configuration
         New-Configuration
         
-        # 检测 Web 服务器
+        # Detect web server
         Test-WebServer
         
-        # 添加到 PATH
+        # Add to PATH
         Add-ToPath
         
-        # 配置防火墙
+        # Configure firewall
         New-FirewallRules
         
-        # 验证安装
+        # Verify installation
         Test-Installation
         
-        # 显示安装后信息
+        # Display post-installation info
         Show-PostInstallInfo
         
-        Write-Info "AutoCert 安装完成！"
+        Write-Info "AutoCert installation completed!"
         
     } catch {
-        Write-Error "安装失败: $($_.Exception.Message)"
+        Write-Error "Installation failed: $($_.Exception.Message)"
         exit 1
     }
 }
 
-# 脚本入口
+# Script entry point
 if ($MyInvocation.InvocationName -ne '.') {
     main
 }

@@ -1,26 +1,45 @@
 #!/bin/bash
 
-# AutoCert 一键安装脚本 - Linux 版本
-# 支持 Ubuntu, CentOS, Debian, AlmaLinux 等主流发行版
+# AutoCert Installation Script - Linux
+# Supports Ubuntu, CentOS, Debian, AlmaLinux and other major distributions
 
 set -euo pipefail
 
-# 配置变量
+# Set encoding to support proper text output - Enhanced version
+# First try to set Chinese environment
+if locale -a 2>/dev/null | grep -q "zh_CN.utf8\|zh_CN.UTF-8"; then
+    export LANG=zh_CN.UTF-8
+    export LC_ALL=zh_CN.UTF-8
+elif locale -a 2>/dev/null | grep -q "en_US.utf8\|en_US.UTF-8"; then
+    export LANG=en_US.UTF-8
+    export LC_ALL=en_US.UTF-8
+else
+    # If the system does not support UTF-8 language packages, use C.UTF-8
+    export LANG=C.UTF-8
+    export LC_ALL=C.UTF-8
+fi
+
+# Ensure UTF-8 encoding
+if command -v stty >/dev/null 2>&1; then
+    stty iutf8 2>/dev/null || true
+fi
+
+# Configuration variables
 PROGRAM_NAME="autocert"
 INSTALL_DIR="/usr/local/bin"
 CONFIG_DIR="/etc/autocert"
 SERVICE_NAME="autocert"
-GITHUB_REPO="renky1025/autcert"  # 替换为实际的 GitHub 仓库
-VERSION="latest"
+GITHUB_REPO="renky1025/autocert"
+ACVERSION="v1.0.0-final"
 
-# 颜色输出
+# Color output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# 日志函数
+# Log functions
 log_info() {
     echo -e "${GREEN}[INFO]${NC} $1" >&2
 }
@@ -39,36 +58,38 @@ log_debug() {
     fi
 }
 
-# 错误处理
+# Error handling
 error_exit() {
     log_error "$1"
     exit 1
 }
 
-# 检查是否为 root 用户
+# Check if running as root
 check_root() {
     if [[ $EUID -ne 0 ]]; then
-        error_exit "此脚本需要 root 权限运行。请使用 sudo 执行。"
+        error_exit "This script requires root privileges. Please run with sudo."
     fi
 }
 
-# 检测操作系统
+# Detect operating system - Simplified version
 detect_os() {
+    # Simplified OS detection - just use "linux" for all Linux distributions
+    OS="linux"
+    
+    # Try to get distribution name for logging only
+    local dist_name="unknown"
     if [[ -f /etc/os-release ]]; then
         . /etc/os-release
-        OS=$ID
-        VER=$VERSION_ID
+        dist_name="$NAME"
     elif type lsb_release >/dev/null 2>&1; then
-        OS=$(lsb_release -si | tr '[:upper:]' '[:lower:]')
-        VER=$(lsb_release -sr)
-    else
-        error_exit "无法检测操作系统类型"
+        dist_name=$(lsb_release -si)
     fi
     
-    log_info "检测到操作系统: $OS $VER"
+    log_info "Detected Linux distribution: $dist_name"
+    log_info "Using unified platform identifier: linux"
 }
 
-# 检测架构
+# Detect architecture
 detect_arch() {
     ARCH=$(uname -m)
     case $ARCH in
@@ -82,117 +103,150 @@ detect_arch() {
             ARCH="arm"
             ;;
         *)
-            error_exit "不支持的架构: $ARCH"
+            error_exit "Unsupported architecture: $ARCH"
             ;;
     esac
-    log_info "检测到架构: $ARCH"
+    log_info "Detected architecture: $ARCH"
 }
 
-# 安装依赖
+# Install dependencies
 install_dependencies() {
-    log_info "安装系统依赖..."
+    log_info "Installing system dependencies..."
     
-    case $OS in
-        ubuntu|debian)
-            apt-get update
-            apt-get install -y curl wget unzip tar openssl ca-certificates
-            ;;
-        centos|rhel|almalinux|rocky)
-            if command -v dnf >/dev/null; then
-                dnf install -y curl wget unzip tar openssl ca-certificates
-            elif command -v yum >/dev/null; then
-                yum install -y curl wget unzip tar openssl ca-certificates
-            else
-                error_exit "无法找到包管理器 (dnf/yum)"
-            fi
-            ;;
-        *)
-            log_warn "未知的操作系统，跳过依赖安装"
-            ;;
-    esac
+    # Detect package manager and install dependencies
+    if command -v apt-get >/dev/null 2>&1; then
+        log_info "Using apt package manager"
+        apt-get update
+        apt-get install -y curl wget unzip tar openssl ca-certificates
+    elif command -v dnf >/dev/null 2>&1; then
+        log_info "Using dnf package manager"
+        dnf install -y curl wget unzip tar openssl ca-certificates
+    elif command -v yum >/dev/null 2>&1; then
+        log_info "Using yum package manager"
+        yum install -y curl wget unzip tar openssl ca-certificates
+    elif command -v zypper >/dev/null 2>&1; then
+        log_info "Using zypper package manager"
+        zypper install -y curl wget unzip tar openssl ca-certificates
+    elif command -v pacman >/dev/null 2>&1; then
+        log_info "Using pacman package manager"
+        pacman -S --noconfirm curl wget unzip tar openssl ca-certificates
+    else
+        log_warn "No supported package manager found, assuming dependencies are installed"
+    fi
 }
 
-# 下载 AutoCert 二进制文件
+# Download AutoCert binary files
 download_binary() {
-    log_info "下载 AutoCert 二进制文件..."
+    log_info "Downloading AutoCert binary files...  $ACVERSION"
     
     local download_url=""
-    local temp_file="/tmp/autocert_${VERSION}.tar.gz"
+    local temp_file="/tmp/autocert_download.tar.gz"
     
-    if [[ "$VERSION" == "latest" ]]; then
-        # 获取最新版本号
-        local latest_version
-        latest_version=$(curl -s "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-        VERSION=$latest_version
-    fi
+    download_url="https://github.com/${GITHUB_REPO}/releases/download/${ACVERSION}/autocert_${ACVERSION}_linux_${ARCH}.tar.gz"
     
-    download_url="https://github.com/${GITHUB_REPO}/releases/download/${VERSION}/autocert_${VERSION}_linux_${ARCH}.tar.gz"
+    log_info "Download URL: $download_url"
     
-    log_info "下载地址: $download_url"
+    # Download file with enhanced retry mechanism
+    log_info "Downloading: $download_url"
     
-    # 下载文件
-    if ! curl -L -o "$temp_file" "$download_url"; then
-        error_exit "下载失败: $download_url"
-    fi
+    for attempt in 1 2 3; do
+        log_debug "Download attempt $attempt"
+        
+        if curl -L --connect-timeout 15 --max-time 300 \
+            --retry 2 --retry-delay 3 --retry-max-time 60 \
+            -H "User-Agent: AutoCert-Installer/1.0" \
+            -o "$temp_file" "$download_url"; then
+            
+            # Verify downloaded file
+            if [[ -f "$temp_file" && -s "$temp_file" ]]; then
+                log_info "Download completed successfully"
+                break
+            else
+                log_warn "Downloaded file is empty or invalid"
+                rm -f "$temp_file"
+            fi
+        fi
+        
+        if [[ $attempt -eq 3 ]]; then
+            error_exit "Download failed after 3 attempts: $download_url"
+        else
+            log_warn "Download attempt $attempt failed, retrying in 5 seconds..."
+            sleep 5
+        fi
+    done
     
-    # 解压到临时目录
-    local temp_dir="/tmp/autocert_extract"
+    # Extract to temporary directory
+    local temp_dir="/tmp/autocert_extract_$$"
     mkdir -p "$temp_dir"
-    tar -xzf "$temp_file" -C "$temp_dir"
     
-    # 安装二进制文件
+    log_info "Extracting files..."
+    if ! tar -xzf "$temp_file" -C "$temp_dir"; then
+        rm -rf "$temp_file" "$temp_dir"
+        error_exit "Failed to extract downloaded archive"
+    fi
+    
+    # Install binary file
     if [[ -f "$temp_dir/autocert" ]]; then
         install -m 755 "$temp_dir/autocert" "$INSTALL_DIR/autocert"
-        log_info "二进制文件安装完成: $INSTALL_DIR/autocert"
+        log_info "Binary file installation completed: $INSTALL_DIR/autocert"
     else
-        error_exit "解压后未找到 autocert 二进制文件"
+        # Try to find binary in subdirectories
+        local binary_file
+        binary_file=$(find "$temp_dir" -name "autocert" -type f 2>/dev/null | head -1)
+        if [[ -n "$binary_file" ]]; then
+            install -m 755 "$binary_file" "$INSTALL_DIR/autocert"
+            log_info "Binary file installation completed: $INSTALL_DIR/autocert"
+        else
+            rm -rf "$temp_file" "$temp_dir"
+            error_exit "autocert binary file not found after extraction"
+        fi
     fi
     
-    # 清理临时文件
+    # Clean up temporary files
     rm -rf "$temp_file" "$temp_dir"
 }
 
-# 创建配置目录
+# Create configuration directory
 create_config_dir() {
-    log_info "创建配置目录..."
+    log_info "Creating configuration directory..."
     
     mkdir -p "$CONFIG_DIR"
     mkdir -p "$CONFIG_DIR/certs"
     mkdir -p "/var/log"
     
-    # 设置权限
+    # Set permissions
     chmod 755 "$CONFIG_DIR"
     chmod 700 "$CONFIG_DIR/certs"
     
-    log_info "配置目录创建完成: $CONFIG_DIR"
+    log_info "Configuration directory created: $CONFIG_DIR"
 }
 
-# 创建默认配置文件
+# Create default configuration file
 create_default_config() {
-    log_info "创建默认配置文件..."
+    log_info "Creating default configuration file..."
     
     local config_file="$CONFIG_DIR/config.yaml"
     
     if [[ ! -f "$config_file" ]]; then
         cat > "$config_file" << EOF
-# AutoCert 配置文件
+# AutoCert Configuration File
 log_level: info
 config_dir: $CONFIG_DIR
 cert_dir: $CONFIG_DIR/certs
 log_dir: /var/log
 
-# ACME 配置
+# ACME Configuration
 acme:
   server: https://acme-v02.api.letsencrypt.org/directory
   key_type: rsa
   key_size: 2048
 
-# Web 服务器配置
+# Web Server Configuration
 webserver:
   type: nginx  # nginx, apache
   reload_cmd: systemctl reload nginx
 
-# 通知配置
+# Notification Configuration
 notification:
   email:
     smtp: ""
@@ -204,138 +258,165 @@ notification:
 EOF
         
         chmod 644 "$config_file"
-        log_info "默认配置文件创建完成: $config_file"
+        log_info "Default configuration file created: $config_file"
     else
-        log_info "配置文件已存在，跳过创建"
+        log_info "Configuration file already exists, skipping creation"
     fi
 }
 
-# 检测并配置 Web 服务器
+# Detect and configure web server
 detect_webserver() {
-    log_info "检测 Web 服务器..."
+    log_info "Detecting web server..."
     
     local webserver=""
     
     if systemctl is-active --quiet nginx 2>/dev/null || command -v nginx >/dev/null; then
         webserver="nginx"
-        log_info "检测到 Nginx"
+        log_info "Detected Nginx"
     elif systemctl is-active --quiet apache2 2>/dev/null || systemctl is-active --quiet httpd 2>/dev/null; then
         webserver="apache"
-        log_info "检测到 Apache"
+        log_info "Detected Apache"
     else
-        log_warn "未检测到支持的 Web 服务器 (nginx/apache)"
+        log_warn "No supported web server detected (nginx/apache)"
         return
     fi
     
-    # 更新配置文件中的 Web 服务器类型
+    # Update web server type in configuration file
     if [[ -f "$CONFIG_DIR/config.yaml" ]]; then
         sed -i "s/type: nginx/type: $webserver/" "$CONFIG_DIR/config.yaml"
-        log_info "配置文件已更新 Web 服务器类型: $webserver"
+        log_info "Configuration file updated with web server type: $webserver"
     fi
 }
 
-# 设置命令行补全
+# Setup command line completion
 setup_completion() {
-    log_info "设置命令行补全..."
+    log_info "Setting up command line completion..."
     
-    # Bash 补全
+    # Bash completion
     if [[ -d /etc/bash_completion.d ]]; then
         "$INSTALL_DIR/autocert" completion bash > /etc/bash_completion.d/autocert
-        log_info "Bash 补全已安装"
+        log_info "Bash completion installed"
     fi
     
-    # Zsh 补全
+    # Zsh completion
     if [[ -d /usr/share/zsh/vendor-completions ]]; then
         "$INSTALL_DIR/autocert" completion zsh > /usr/share/zsh/vendor-completions/_autocert
-        log_info "Zsh 补全已安装"
+        log_info "Zsh completion installed"
     fi
 }
 
-# 验证安装
+# Verify installation
 verify_installation() {
-    log_info "验证安装..."
+    log_info "Verifying installation..."
     
     if [[ ! -f "$INSTALL_DIR/autocert" ]]; then
-        error_exit "安装验证失败: 二进制文件不存在"
+        error_exit "Installation verification failed: binary file does not exist at $INSTALL_DIR/autocert"
     fi
     
     if [[ ! -x "$INSTALL_DIR/autocert" ]]; then
-        error_exit "安装验证失败: 二进制文件不可执行"
+        error_exit "Installation verification failed: binary file is not executable"
     fi
     
-    # 测试命令
-    if ! "$INSTALL_DIR/autocert" --help >/dev/null 2>&1; then
-        error_exit "安装验证失败: 命令执行失败"
+    # Test command execution
+    log_info "Testing autocert command..."
+    local test_output
+    if test_output=$("$INSTALL_DIR/autocert" --version 2>&1); then
+        log_info "Command test successful: $test_output"
+    else
+        # Try help command as fallback
+        if test_output=$("$INSTALL_DIR/autocert" --help 2>&1); then
+            log_info "Command test successful (via --help)"
+        else
+            error_exit "Installation verification failed: command execution failed"
+        fi
     fi
     
-    log_info "安装验证成功"
+    # Verify file size (should be larger than 1MB for a typical Go binary)
+    local file_size
+    if file_size=$(stat -c%s "$INSTALL_DIR/autocert" 2>/dev/null); then
+        if [[ $file_size -lt 1048576 ]]; then  # 1MB
+            log_warn "Binary file seems unusually small ($file_size bytes), installation may be incomplete"
+        else
+            log_debug "Binary file size: $file_size bytes"
+        fi
+    fi
+    
+    log_info "Installation verification successful"
 }
 
-# 显示安装后信息
+# Display post-installation information
 show_post_install_info() {
     echo
-    echo -e "${GREEN}🎉 AutoCert 安装成功！${NC}"
+    echo -e "${GREEN}🎉 AutoCert Installation Successful!${NC}"
     echo
-    echo "安装信息:"
-    echo "  - 二进制文件: $INSTALL_DIR/autocert"
-    echo "  - 配置目录: $CONFIG_DIR"
-    echo "  - 配置文件: $CONFIG_DIR/config.yaml"
-    echo "  - 证书目录: $CONFIG_DIR/certs"
-    echo "  - 日志目录: /var/log"
+    echo "Installation Information:"
+    echo "  - Binary file: $INSTALL_DIR/autocert"
+    echo "  - Configuration directory: $CONFIG_DIR"
+    echo "  - Configuration file: $CONFIG_DIR/config.yaml"
+    echo "  - Certificate directory: $CONFIG_DIR/certs"
+    echo "  - Log directory: /var/log"
     echo
-    echo "快速开始:"
-    echo "  1. 配置邮箱和域名:"
+    echo "Quick Start:"
+    echo "  1. Test installation:"
+    echo "     autocert --version"
+    echo
+    echo "  2. Configure email and domain:"
     echo "     autocert install --domain your-domain.com --email your-email@example.com --nginx"
     echo
-    echo "  2. 设置自动续期:"
+    echo "  3. Setup automatic renewal:"
     echo "     autocert schedule install"
     echo
-    echo "  3. 查看证书状态:"
+    echo "  4. Check certificate status:"
     echo "     autocert status"
     echo
-    echo "  4. 查看帮助:"
+    echo "  5. View help:"
     echo "     autocert --help"
     echo
-    echo "更多信息请访问: https://github.com/$GITHUB_REPO"
+    echo -e "${YELLOW}Important Notes:${NC}"
+    echo "  - Ensure your domain points to this server"
+    echo "  - Ports 80 and 443 must be accessible from the internet"
+    echo "  - Configuration file location: $CONFIG_DIR/config.yaml"
+    echo
+    echo -e "${BLUE}For more information visit: https://github.com/$GITHUB_REPO${NC}"
 }
 
-# 主函数
+# Main function
 main() {
-    log_info "开始安装 AutoCert..."
+    log_info "Starting AutoCert installation..."
     
-    # 检查权限
+    # Check permissions
     check_root
     
-    # 检测系统环境
+    # Detect system environment
     detect_os
     detect_arch
     
-    # 安装依赖
+    # Install dependencies
     install_dependencies
     
-    # 下载并安装
+    # Download and install
     download_binary
     
-    # 创建配置
+    # Create configuration
     create_config_dir
     create_default_config
     
-    # 检测 Web 服务器
+    # Detect web server
     detect_webserver
     
-    # 设置补全
+    # Setup completion
     setup_completion
     
-    # 验证安装
+    # Verify installation
     verify_installation
     
-    # 显示安装后信息
+    # Display post-installation info
     show_post_install_info
     
-    log_info "AutoCert 安装完成！"
+    log_info "AutoCert installation completed!"
 }
 
-# 脚本入口
+# Script entry point
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     main "$@"
 fi
