@@ -104,7 +104,7 @@ function Install-Dependencies {
 function Get-AutoCertBinary {
     Write-Info "下载 AutoCert 二进制文件..."
     
-    $repoUrl = "https://api.github.com/repos/autocert/autocert"  # 替换为实际仓库
+    $repoUrl = "https://api.github.com/repos/renky1025/autocert"  # 替换为实际仓库
     $tempDir = "$env:TEMP\AutoCert"
     $tempFile = "$tempDir\autocert.zip"
     
@@ -124,7 +124,7 @@ function Get-AutoCertBinary {
         }
         
         # 构建下载 URL
-        $downloadUrl = "https://github.com/autocert/autocert/releases/download/$Version/autocert_${Version}_windows_$($script:Architecture).zip"
+        $downloadUrl = "https://github.com/renky1025/autocert/releases/download/$Version/autocert_${Version}_windows_$($script:Architecture).zip"
         Write-Debug "下载 URL: $downloadUrl"
         
         # 下载文件

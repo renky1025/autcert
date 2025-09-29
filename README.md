@@ -21,12 +21,12 @@ AutoCert 是一个跨平台的 Let's Encrypt HTTPS 证书管理工具，支持�
 
 **Linux/macOS:**
 ```bash
-curl -sSL https://autocert.sh/install.sh | bash
+curl -sSL https://ftmi.info/install.sh | bash
 ```
 
 **Windows (PowerShell 管理员模式):**
 ```powershell
-iwr -useb https://autocert.sh/install.ps1 | iex
+iwr -useb https://ftmi.info/install.ps1 | iex
 ```
 
 ### 基本使用
@@ -162,11 +162,80 @@ autocert install --domains "example.com,www.example.com,*.example.com" --email a
 #### 方式三：源码编译
 
 ```bash
-git clone https://github.com/autocert/autocert.git
+git clone https://github.com/renky1025/autcert.git
 cd autocert
 make build
 sudo make install
 ```
+
+### 🚀 构建和发布
+
+#### 基本构建
+```bash
+# 构建单平台二进制文件
+make build
+
+# 构建所有平台
+make build-all
+```
+
+#### 一键打包（标准格式）
+
+**Linux/macOS 环境：**
+```bash
+# 打包所有平台
+make package
+
+# 打包特定平台
+make package-linux
+make package-windows
+
+# 完整发布流程（清理+测试+打包）
+make release
+
+# 直接使用打包脚本
+./scripts/package.sh v1.0.0 dist autocert all
+```
+
+**Windows 环境：**
+```powershell
+# PowerShell 打包脚本
+.\scripts\package-simple.ps1 -Version "v1.0.0" -Platform "all"
+.\scripts\package-simple.ps1 -Version "v1.0.0" -Platform "windows"
+
+# 批处理打包
+.\scripts\build-release.bat v1.0.0 all
+```
+
+#### 打包输出格式
+
+AutoCert 支持生成标准格式的发布包：
+
+**Linux/macOS 包格式：**
+```
+autocert_${VERSION}_linux_${ARCH}.tar.gz
+autocert_${VERSION}_darwin_${ARCH}.tar.gz
+```
+
+**Windows 包格式：**
+```
+autocert_${VERSION}_windows_${ARCH}.zip
+```
+
+**支持的架构：** `amd64` (x86_64), `arm64` (ARM64)
+
+**示例输出：**
+```
+dist/
+├── autocert_v1.0.0_linux_amd64.tar.gz
+├── autocert_v1.0.0_linux_arm64.tar.gz
+├── autocert_v1.0.0_windows_amd64.zip
+├── autocert_v1.0.0_windows_arm64.zip
+├── autocert_v1.0.0_darwin_amd64.tar.gz
+└── autocert_v1.0.0_darwin_arm64.tar.gz
+```
+
+📖 **详细指南：** 查看 [docs/packaging-guide.md](docs/packaging-guide.md) 获取完整的打包说明。
 
 ### 命令参考
 
@@ -427,9 +496,8 @@ autocert status --domain example.com
 
 ## 📞 支持
 
-- 📚 [文档](https://github.com/autocert/autocert/wiki)
-- 🐛 [问题反馈](https://github.com/autocert/autocert/issues)
-- 💬 [讨论](https://github.com/autocert/autocert/discussions)
+- 🐛 [问题反馈](https://github.com/renky1025/autcert/issues)
+- 💬 [讨论](https://github.com/renky1025/autcert/discussions)
 
 ---
 

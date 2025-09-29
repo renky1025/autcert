@@ -10,7 +10,7 @@ PROGRAM_NAME="autocert"
 INSTALL_DIR="/usr/local/bin"
 CONFIG_DIR="/etc/autocert"
 SERVICE_NAME="autocert"
-GITHUB_REPO="autocert/autocert"  # 替换为实际的 GitHub 仓库
+GITHUB_REPO="renky1025/autcert"  # 替换为实际的 GitHub 仓库
 VERSION="latest"
 
 # 颜色输出

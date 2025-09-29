@@ -94,32 +94,69 @@ dist: ## 创建发布包
 	@mkdir -p $(DIST_DIR)
 	
 	# Linux amd64
-	@GOOS=linux GOARCH=amd64 go build $(GO_BUILD_FLAGS) -o $(DIST_DIR)/$(BINARY_NAME)_linux_amd64
-	@tar -czf $(DIST_DIR)/$(BINARY_NAME)_$(VERSION)_linux_amd64.tar.gz -C $(DIST_DIR) $(BINARY_NAME)_linux_amd64
-	@rm $(DIST_DIR)/$(BINARY_NAME)_linux_amd64
+	@GOOS=linux GOARCH=amd64 go build $(GO_BUILD_FLAGS) -o $(DIST_DIR)/$(BINARY_NAME)
+	@tar -czf $(DIST_DIR)/$(BINARY_NAME)_$(VERSION)_linux_amd64.tar.gz -C $(DIST_DIR) $(BINARY_NAME)
+	@rm $(DIST_DIR)/$(BINARY_NAME)
 	
 	# Linux arm64
-	@GOOS=linux GOARCH=arm64 go build $(GO_BUILD_FLAGS) -o $(DIST_DIR)/$(BINARY_NAME)_linux_arm64
-	@tar -czf $(DIST_DIR)/$(BINARY_NAME)_$(VERSION)_linux_arm64.tar.gz -C $(DIST_DIR) $(BINARY_NAME)_linux_arm64
-	@rm $(DIST_DIR)/$(BINARY_NAME)_linux_arm64
+	@GOOS=linux GOARCH=arm64 go build $(GO_BUILD_FLAGS) -o $(DIST_DIR)/$(BINARY_NAME)
+	@tar -czf $(DIST_DIR)/$(BINARY_NAME)_$(VERSION)_linux_arm64.tar.gz -C $(DIST_DIR) $(BINARY_NAME)
+	@rm $(DIST_DIR)/$(BINARY_NAME)
 	
 	# Windows amd64
-	@GOOS=windows GOARCH=amd64 go build $(GO_BUILD_FLAGS) -o $(DIST_DIR)/$(BINARY_NAME)_windows_amd64.exe
-	@cd $(DIST_DIR) && zip $(BINARY_NAME)_$(VERSION)_windows_amd64.zip $(BINARY_NAME)_windows_amd64.exe
-	@rm $(DIST_DIR)/$(BINARY_NAME)_windows_amd64.exe
+	@GOOS=windows GOARCH=amd64 go build $(GO_BUILD_FLAGS) -o $(DIST_DIR)/$(BINARY_NAME).exe
+	@cd $(DIST_DIR) && zip $(BINARY_NAME)_$(VERSION)_windows_amd64.zip $(BINARY_NAME).exe
+	@rm $(DIST_DIR)/$(BINARY_NAME).exe
+	
+	# Windows arm64
+	@GOOS=windows GOARCH=arm64 go build $(GO_BUILD_FLAGS) -o $(DIST_DIR)/$(BINARY_NAME).exe
+	@cd $(DIST_DIR) && zip $(BINARY_NAME)_$(VERSION)_windows_arm64.zip $(BINARY_NAME).exe
+	@rm $(DIST_DIR)/$(BINARY_NAME).exe
 	
 	# macOS amd64
-	@GOOS=darwin GOARCH=amd64 go build $(GO_BUILD_FLAGS) -o $(DIST_DIR)/$(BINARY_NAME)_darwin_amd64
-	@tar -czf $(DIST_DIR)/$(BINARY_NAME)_$(VERSION)_darwin_amd64.tar.gz -C $(DIST_DIR) $(BINARY_NAME)_darwin_amd64
-	@rm $(DIST_DIR)/$(BINARY_NAME)_darwin_amd64
+	@GOOS=darwin GOARCH=amd64 go build $(GO_BUILD_FLAGS) -o $(DIST_DIR)/$(BINARY_NAME)
+	@tar -czf $(DIST_DIR)/$(BINARY_NAME)_$(VERSION)_darwin_amd64.tar.gz -C $(DIST_DIR) $(BINARY_NAME)
+	@rm $(DIST_DIR)/$(BINARY_NAME)
 	
 	# macOS arm64 (Apple Silicon)
-	@GOOS=darwin GOARCH=arm64 go build $(GO_BUILD_FLAGS) -o $(DIST_DIR)/$(BINARY_NAME)_darwin_arm64
-	@tar -czf $(DIST_DIR)/$(BINARY_NAME)_$(VERSION)_darwin_arm64.tar.gz -C $(DIST_DIR) $(BINARY_NAME)_darwin_arm64
-	@rm $(DIST_DIR)/$(BINARY_NAME)_darwin_arm64
+	@GOOS=darwin GOARCH=arm64 go build $(GO_BUILD_FLAGS) -o $(DIST_DIR)/$(BINARY_NAME)
+	@tar -czf $(DIST_DIR)/$(BINARY_NAME)_$(VERSION)_darwin_arm64.tar.gz -C $(DIST_DIR) $(BINARY_NAME)
+	@rm $(DIST_DIR)/$(BINARY_NAME)
 	
 	@echo "发布包创建完成:"
 	@ls -la $(DIST_DIR)/
+
+package: ## 一键打包所有平台（标准格式）
+	@echo "一键打包 AutoCert 所有平台..."
+	@mkdir -p $(DIST_DIR)
+	@chmod +x scripts/package.sh
+	@scripts/package.sh $(VERSION) $(DIST_DIR) $(BINARY_NAME)
+	@echo "打包完成!"
+
+package-linux: ## 打包 Linux 平台
+	@echo "打包 Linux 平台..."
+	@mkdir -p $(DIST_DIR)
+	@chmod +x scripts/package.sh
+	@scripts/package.sh $(VERSION) $(DIST_DIR) $(BINARY_NAME) linux
+
+package-windows: ## 打包 Windows 平台
+	@echo "打包 Windows 平台..."
+	@mkdir -p $(DIST_DIR)
+	@chmod +x scripts/package.sh
+	@scripts/package.sh $(VERSION) $(DIST_DIR) $(BINARY_NAME) windows
+
+release: ## 一键发布（清理+构建+打包）
+	@echo "开始一键发布流程..."
+	@$(MAKE) clean
+	@$(MAKE) test
+	@$(MAKE) package
+	@echo "发布完成!"
+
+quick-package: ## 快速打包（不清理不测试）
+	@echo "快速打包..."
+	@mkdir -p $(DIST_DIR)
+	@chmod +x scripts/build-release.sh
+	@scripts/build-release.sh $(VERSION)
 
 deps: ## 安装开发依赖
 	@echo "安装开发依赖..."
